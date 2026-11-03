@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const DEFAULT_BIN_PATH = "/bin/{s}";
+
 const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: [][]const u8, stdOut: *std.Io.Writer) anyerror!void;
 
 fn helpCmd(allocator: std.mem.Allocator, args: [][]const u8, stdOut: *std.Io.Writer) anyerror!void {
@@ -43,9 +45,19 @@ pub fn main(init: std.process.Init) !void {
     try builtins.put("clear", clearCmd);
 
     while (true) {
-        try stdOut.writeAll(":| ");
-        try stdOut.flush();
 
+		const currentDir = std.Io.Dir.cwd();
+		var a_buff: [std.fs.max_path_bytes]u8 = undefined;
+
+		if (currentDir.realPathFile(io, ".", &a_buff)) |n_len| {
+			const commandInputText = try std.fmt.allocPrint(allocator, "[{s}] :)  ", .{a_buff[0..n_len]});
+			try stdOut.writeAll(commandInputText);
+        	try stdOut.flush();
+        	allocator.free(commandInputText);
+		} else |err_x| {
+			std.debug.print("Error {any}\n", .{err_x});
+		}
+		
         if (try readString(allocator, stdIn)) |userStr| {
             defer allocator.free(userStr);
 
@@ -82,7 +94,7 @@ pub fn main(init: std.process.Init) !void {
                 try stdOut.flush();
                 continue;
             } else if (childPid == 0) {
-                const pathSlice = std.fmt.allocPrint(allocator, "/usr/bin/{s}", .{cmd}) catch std.os.linux.exit(1);
+                const pathSlice = std.fmt.allocPrint(allocator, DEFAULT_BIN_PATH, .{cmd}) catch std.os.linux.exit(1);
                 const binPath = allocator.dupeZ(u8, pathSlice) catch std.os.linux.exit(1);
 
                 var argvZ: std.ArrayList(?[*:0]const u8) = .empty;
@@ -106,9 +118,12 @@ pub fn main(init: std.process.Init) !void {
 
                 var status: u32 = 0;
                 _ = std.os.linux.wait4(pid, &status, 0, null);
+                
+                std.debug.print("\n[{s}] exited with code {d}\n", .{cmd, status});
             }
         } else {
             try stdOut.writeAll("\n");
+            try stdOut.flush();
             break;
         }
     }
